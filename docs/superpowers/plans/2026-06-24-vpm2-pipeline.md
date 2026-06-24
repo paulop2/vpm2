@@ -34,6 +34,7 @@ vpm2/
 │  ├─ context.py                  # Context dataclass + path helpers
 │  ├─ config.py                   # Config dataclass (models, lang, voice, sync params)
 │  ├─ pipeline.py                 # STAGES list + run_pipeline (skip/resume/force)
+│  ├─ preflight.py                # friendly checks: ffmpeg present, Ollama reachable
 │  ├─ artifacts.py                # JSON read/write + schema validation helpers
 │  ├─ timeline.py                 # PURE sync algorithm (plan_timeline)
 │  ├─ stages/
@@ -86,33 +87,54 @@ vpm2/
 - Consumes: nothing.
 - Produces: an installable package `vpm2` with console script `vpm2 = "vpm2.cli:main"`; `uv run pytest` works.
 
-- [ ] **Step 1: Initialize uv project**
+> **Important — flat layout, not src layout.** Do NOT run `uv init --package`
+> (it generates a `src/vpm2/` layout that does NOT match the `vpm2/...` paths used
+> everywhere in this plan). Write `pyproject.toml` explicitly as below, which pins a
+> top-level `vpm2/` package via hatchling. The working directory is the project root
+> (the folder containing this `docs/` tree — adjust if your clone is elsewhere).
 
-Run:
-```bash
-cd /mnt/c/Users/PVS/projetos/vpm2
-uv init --package --name vpm2 --python 3.11
-```
-Expected: creates `pyproject.toml` and `src/`-less package layout. If `uv init` created a `vpm2/` or `src/vpm2/` with a sample module, keep the package dir at top-level `vpm2/` (move if needed) so paths in this plan match.
+- [ ] **Step 1: Write pyproject.toml explicitly**
 
-- [ ] **Step 2: Add runtime dependencies**
-
-Run:
-```bash
-uv add yt-dlp requests soundfile numpy faster-whisper
-uv add --dev pytest
-```
-Expected: dependencies resolve and `uv.lock` is written. (PyTorch/Chatterbox are added in their own tasks because of the CUDA index.)
-
-- [ ] **Step 3: Define console entrypoint**
-
-Edit `pyproject.toml`, add under `[project.scripts]`:
+Create `pyproject.toml` (full content):
 ```toml
+[project]
+name = "vpm2"
+version = "0.1.0"
+description = "Translate English YouTube videos into a synced PT-BR dub, fully local."
+requires-python = ">=3.11"
+dependencies = [
+    "yt-dlp",
+    "requests",
+    "soundfile",
+    "numpy",
+    "faster-whisper",
+]
+
 [project.scripts]
 vpm2 = "vpm2.cli:main"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vpm2"]
 ```
 
-- [ ] **Step 4: Create package marker files**
+- [ ] **Step 2: Sync the environment**
+
+Run:
+```bash
+uv sync
+```
+Expected: creates `.venv/` and `uv.lock`, installs the runtime deps + `pytest`.
+(PyTorch and `chatterbox-tts` are added later in Task 12 because they need a special
+CUDA index and would otherwise slow every sync.)
+
+- [ ] **Step 3: Create package marker files**
 
 Create `vpm2/__init__.py`:
 ```python
@@ -120,7 +142,7 @@ __version__ = "0.1.0"
 ```
 Create empty `vpm2/stages/__init__.py`, `vpm2/tts/__init__.py`, `tests/__init__.py` (empty files).
 
-- [ ] **Step 5: Write README skeleton**
+- [ ] **Step 4: Write README skeleton**
 
 Create `README.md`:
 ```markdown
@@ -148,12 +170,12 @@ Output: `work/<video-id>/06_final.mp4`.
 See `tests/` for unit tests (`uv run pytest`). End-to-end requires GPU + network.
 ```
 
-- [ ] **Step 6: Verify package imports**
+- [ ] **Step 5: Verify package imports + pytest runs**
 
-Run: `uv run python -c "import vpm2; print(vpm2.__version__)"`
-Expected: prints `0.1.0`.
+Run: `uv run python -c "import vpm2; print(vpm2.__version__)" && uv run pytest -q`
+Expected: prints `0.1.0`; pytest reports "no tests ran" (exit 5) — that is fine at this stage, it confirms the runner works.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -172,7 +194,7 @@ git commit -m "chore: scaffold uv project for vpm2"
   - `Config` dataclass with fields:
     `asr_model: str = "large-v3"`, `ollama_model: str = "qwen2.5:7b-instruct"`,
     `ollama_url: str = "http://localhost:11434"`, `tts_backend: str = "chatterbox"`,
-    `voice_mode: str = "preset"` (`"preset"` | `"cloning"`), `preset_ref_wav: str | None = None`,
+    `voice_mode: str = "cloning"` (`"cloning"` | `"preset"`), `preset_ref_wav: str | None = None`,
     `source_lang: str = "en"`, `target_lang: str = "pt"`,
     `max_speed: float = 1.25`, `allow_push: bool = True`, `keep_original_audio: bool = True`.
   - `Context` dataclass: `url: str`, `work_dir: Path`, `config: Config`, with method
@@ -192,8 +214,8 @@ class Config:
     ollama_model: str = "qwen2.5:7b-instruct"
     ollama_url: str = "http://localhost:11434"
     tts_backend: str = "chatterbox"
-    voice_mode: str = "preset"          # "preset" | "cloning"
-    preset_ref_wav: str | None = None   # path to curated PT reference clip
+    voice_mode: str = "cloning"         # "cloning" | "preset"
+    preset_ref_wav: str | None = None   # required when voice_mode == "preset"
     source_lang: str = "en"
     target_lang: str = "pt"
     max_speed: float = 1.25
@@ -548,8 +570,8 @@ git commit -m "feat: add pure timeline sync algorithm"
 **Interfaces:**
 - Produces:
   - `class Stage(ABC)` with `name: str` (class attr), abstract `output_path(ctx) -> Path`, `is_done(ctx) -> bool`, `run(ctx) -> None`.
-  - `run_pipeline(ctx: Context, stages: list[Stage] | None = None, force_from: str | None = None) -> None`
-    Iterates stages in order; for each: if `force_from` is set and we have reached that stage (or passed it), always `run`; otherwise `run` only if `not is_done(ctx)`. Records which stages ran for testability via return value `list[str]` of executed stage names.
+  - `run_pipeline(ctx: Context, stages: list[Stage] | None = None, force_from: str | None = None) -> list[str]`
+    Iterates stages in order; for each: if `force_from` is set and we have reached that stage (or passed it), always `run`; otherwise `run` only if `not is_done(ctx)`. Returns the `list[str]` of executed stage names. **If `force_from` is not `None` and matches no stage name, raise `ValueError`** (so a typo in `--force` fails loudly instead of silently doing nothing).
   - Module-level `STAGES: list[Stage]` (populated in later tasks; starts empty import-safe).
 
 - [ ] **Step 1: Write failing tests**
@@ -599,6 +621,13 @@ def test_force_from_reruns_that_stage_onward(tmp_path):
     executed = run_pipeline(make_ctx(tmp_path), stages=[a, b, c], force_from="b")
     assert executed == ["b", "c"]
     assert a.ran is False and b.ran is True and c.ran is True
+
+
+def test_force_from_unknown_stage_raises(tmp_path):
+    import pytest
+    a = FakeStage("a", done=True)
+    with pytest.raises(ValueError):
+        run_pipeline(make_ctx(tmp_path), stages=[a], force_from="nope")
 ```
 
 - [ ] **Step 2: Run tests, verify they fail**
@@ -644,6 +673,12 @@ def run_pipeline(ctx: Context, stages: list[Stage] | None = None,
                  force_from: str | None = None) -> list[str]:
     stages = STAGES if stages is None else stages
     ctx.work_dir.mkdir(parents=True, exist_ok=True)
+
+    if force_from is not None and force_from not in {s.name for s in stages}:
+        raise ValueError(
+            f"--force: unknown stage '{force_from}'. "
+            f"Valid stages: {[s.name for s in stages]}"
+        )
 
     forcing = False
     executed: list[str] = []
@@ -1151,20 +1186,54 @@ git commit -m "feat: add translate stage (Ollama)"
 
 This wraps the Chatterbox model; verify the exact API before coding.
 
-- [ ] **Step 1: Add PyTorch (cu128) and Chatterbox**
+> **This is the highest-risk task.** The RTX 5060 Ti (Blackwell/sm_120) needs a
+> **CUDA 12.8+ PyTorch wheel**, and `chatterbox-tts` pins its own torch range — the
+> two can conflict. Configure the CUDA index as a proper uv source (the bare
+> `--index URL` flag does NOT reliably pin torch). Do the dependency resolution as a
+> distinct, verified step before writing any backend code.
+
+- [ ] **Step 1: Configure the PyTorch CUDA index in pyproject.toml**
+
+Add these sections to `pyproject.toml` (a dedicated explicit index + source pin so
+uv pulls torch from cu128, not PyPI):
+```toml
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+```
+
+- [ ] **Step 2: Add torch, torchaudio, and chatterbox-tts**
 
 Run:
 ```bash
-uv add torch torchaudio --index https://download.pytorch.org/whl/cu128
-uv add chatterbox-tts
+uv add torch torchaudio chatterbox-tts
 ```
-Expected: resolves. Then verify GPU:
-```bash
-uv run python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
-```
-Expected: `True 12.8` (or similar). If `False`, fix the WSL CUDA/driver setup before continuing.
+Expected: resolution succeeds. **If uv reports a version conflict** between
+`chatterbox-tts`'s pinned torch and the cu128 index: relax by letting uv pick the
+torch version chatterbox allows but still from the cu128 index — i.e. do NOT pin an
+exact torch version yourself; if it still conflicts, run
+`uv add "chatterbox-tts" && uv add torch torchaudio --index pytorch-cu128` so
+chatterbox resolves first and torch is then forced from the CUDA index. Record the
+final resolved torch version in the commit message.
 
-- [ ] **Step 2: Verify Chatterbox API**
+- [ ] **Step 3: Verify the GPU build actually works**
+
+Run:
+```bash
+uv run python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+Expected: a `cu128` (or newer) build with `torch.cuda.is_available()` == `True`, e.g.
+`2.x.x+cu128 12.8 True`. **If `False`**, STOP and fix the WSL2 NVIDIA driver / CUDA
+setup (`nvidia-smi` must work inside WSL) before continuing — no later stage will run
+on GPU otherwise. A CPU-only torch (`+cpu`) means the index pin did not take; redo
+Step 1–2.
+
+- [ ] **Step 4: Verify Chatterbox API**
 
 Run:
 ```bash
@@ -1172,9 +1241,9 @@ uv run python -c "from chatterbox.mtl_tts import ChatterboxMultilingualTTS; prin
 ```
 Expected: `ok`. Confirm the generation call signature in the installed version (README/`help`): the code below assumes
 `model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")` and
-`wav = model.generate(text, language_id="pt", audio_prompt_path=str(ref))` returning a torch tensor at `model.sr`. If the installed API differs (method name, kwargs), adjust `synth` accordingly — keep the `TTSBackend.synth` signature unchanged.
+`wav = model.generate(text, language_id="pt", audio_prompt_path=str(ref))` returning a torch tensor at `model.sr`. If the installed API differs (method name, kwargs), adjust `synth` accordingly — keep the `TTSBackend.synth` signature unchanged. Note Chatterbox has a per-call text length limit; this pipeline feeds it one ASR segment (a short sentence) at a time, which stays well under it.
 
-- [ ] **Step 3: Implement TTSBackend base + factory**
+- [ ] **Step 5: Implement TTSBackend base + factory**
 
 Create `vpm2/tts/base.py`:
 ```python
@@ -1201,7 +1270,7 @@ def get_backend(config: Config) -> TTSBackend:
     raise ValueError(f"unknown tts backend: {config.tts_backend}")
 ```
 
-- [ ] **Step 4: Implement Chatterbox backend**
+- [ ] **Step 6: Implement Chatterbox backend**
 
 Create `vpm2/tts/chatterbox_backend.py`:
 ```python
@@ -1234,12 +1303,12 @@ class ChatterboxBackend(TTSBackend):
         return arr
 ```
 
-- [ ] **Step 5: Verify imports (no model download)**
+- [ ] **Step 7: Verify imports (no model download)**
 
 Run: `uv run python -c "from vpm2.tts.base import get_backend; from vpm2.config import Config; print(type(get_backend(Config())).__name__)"`
 Expected: prints `ChatterboxBackend`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add vpm2/tts/base.py vpm2/tts/chatterbox_backend.py pyproject.toml uv.lock
@@ -1281,8 +1350,12 @@ def _extract_reference(ctx: Context) -> Path:
     data, sr = sf.read(str(audio_path))
     if data.ndim > 1:
         data = data.mean(axis=1)
-    # faster-whisper VAD expects 16kHz float32
-    ts = get_speech_timestamps(data.astype("float32"), VadOptions())
+    # faster-whisper VAD expects 16kHz float32; timestamps come back in SAMPLES.
+    ts = get_speech_timestamps(
+        data.astype("float32"),
+        vad_options=VadOptions(),
+        sampling_rate=sr,
+    )
     spans = [(t["start"] / sr, t["end"] / sr) for t in ts]
     win = pick_reference_window(spans)
     ref_path = ctx.path("ref_voice.wav")
@@ -1310,10 +1383,18 @@ class SynthesizeStage(Stage):
 
         if ctx.config.voice_mode == "cloning":
             ref = _extract_reference(ctx)
-        elif ctx.config.preset_ref_wav:
+        elif ctx.config.voice_mode == "preset":
+            if not ctx.config.preset_ref_wav:
+                raise ValueError(
+                    "voice_mode='preset' requires a reference clip. "
+                    "Pass --preset-ref <clean_pt_voice.wav> "
+                    "(Chatterbox has no built-in preset voices)."
+                )
             ref = Path(ctx.config.preset_ref_wav)
+            if not ref.exists():
+                raise FileNotFoundError(f"preset_ref_wav not found: {ref}")
         else:
-            ref = None
+            raise ValueError(f"unknown voice_mode: {ctx.config.voice_mode}")
 
         backend = get_backend(ctx.config)
         segs = read_json(ctx.path("04_translation.json"))["segments"]
@@ -1495,18 +1576,64 @@ git commit -m "feat: add assemble stage (timeline sync + mux)"
 
 ---
 
-### Task 15: CLI wiring
+### Task 15: CLI wiring + preflight checks
 
 **Files:**
-- Create: `vpm2/cli.py`
+- Create: `vpm2/preflight.py`, `vpm2/cli.py`
 
 **Interfaces:**
-- Consumes: `run_pipeline`, `Config`, `Context`, `01_meta.json` id (via yt-dlp pre-extract for the work dir name).
-- Produces: `main()` console entrypoint. Flags: `url` (positional), `--voice-mode {preset,cloning}`, `--preset-ref`, `--force <stage>`, `--ollama-model`, `--asr-model`, `--work-root` (default `work`).
+- Produces:
+  - `check_ffmpeg() -> None` and `check_ollama(config: Config) -> None` in `vpm2/preflight.py`
+    — raise `SystemExit` with a clear, actionable PT message (not a raw stack trace)
+    when ffmpeg is missing / Ollama is unreachable / the model isn't pulled. Satisfies
+    the spec's "erro claro e acionável" requirement.
+  - `main()` console entrypoint. Flags: `url` (positional),
+    `--voice-mode {cloning,preset}` (default `cloning` — zero-config: reference is
+    auto-extracted; `preset` requires `--preset-ref`), `--preset-ref`, `--force <stage>`,
+    `--ollama-model`, `--asr-model`, `--work-root` (default `work`).
 
-The work-dir name needs the video id before download. Resolve it with a metadata-only yt-dlp call; fall back to a slug of the URL.
+The work-dir name needs the video id before download. Resolve it with a metadata-only
+yt-dlp call; fall back to a slug of the URL.
 
-- [ ] **Step 1: Implement CLI**
+These are thin I/O wrappers (no unit tests); they are exercised by the smoke test.
+
+- [ ] **Step 1: Implement preflight checks**
+
+Create `vpm2/preflight.py`:
+```python
+import shutil
+
+import requests
+
+from vpm2.config import Config
+
+
+def check_ffmpeg() -> None:
+    if shutil.which("ffmpeg") is None:
+        raise SystemExit(
+            "[vpm2] ffmpeg não encontrado no PATH. "
+            "Instale com: sudo apt install ffmpeg"
+        )
+
+
+def check_ollama(config: Config) -> None:
+    try:
+        resp = requests.get(f"{config.ollama_url}/api/tags", timeout=5)
+        resp.raise_for_status()
+    except requests.RequestException:
+        raise SystemExit(
+            f"[vpm2] Ollama não respondeu em {config.ollama_url}. "
+            "Inicie o Ollama (`ollama serve`) antes de rodar."
+        )
+    names = [m.get("name", "") for m in resp.json().get("models", [])]
+    if not any(config.ollama_model in n for n in names):
+        raise SystemExit(
+            f"[vpm2] modelo '{config.ollama_model}' não está disponível no Ollama. "
+            f"Rode: ollama pull {config.ollama_model}"
+        )
+```
+
+- [ ] **Step 2: Implement CLI**
 
 Create `vpm2/cli.py`:
 ```python
@@ -1520,6 +1647,7 @@ import yt_dlp
 from vpm2.config import Config
 from vpm2.context import Context
 from vpm2.pipeline import run_pipeline
+from vpm2.preflight import check_ffmpeg, check_ollama
 
 
 def _resolve_id(url: str) -> str:
@@ -1538,8 +1666,11 @@ def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     ap = argparse.ArgumentParser(prog="vpm2")
     ap.add_argument("url")
-    ap.add_argument("--voice-mode", choices=["preset", "cloning"], default="preset")
-    ap.add_argument("--preset-ref", default=None)
+    ap.add_argument("--voice-mode", choices=["cloning", "preset"], default="cloning",
+                    help="cloning = auto-extract reference from the video (zero-config); "
+                         "preset = use --preset-ref clip")
+    ap.add_argument("--preset-ref", default=None,
+                    help="clean PT reference wav (required when --voice-mode preset)")
     ap.add_argument("--force", default=None,
                     help="rerun from this stage name onward")
     ap.add_argument("--ollama-model", default=None)
@@ -1547,11 +1678,18 @@ def main(argv=None) -> int:
     ap.add_argument("--work-root", default="work")
     args = ap.parse_args(argv)
 
+    if args.voice_mode == "preset" and not args.preset_ref:
+        ap.error("--voice-mode preset requires --preset-ref <clean_pt_voice.wav>")
+
     config = Config(voice_mode=args.voice_mode, preset_ref_wav=args.preset_ref)
     if args.ollama_model:
         config.ollama_model = args.ollama_model
     if args.asr_model:
         config.asr_model = args.asr_model
+
+    # Fail fast with friendly messages before any heavy work.
+    check_ffmpeg()
+    check_ollama(config)
 
     video_id = _resolve_id(args.url)
     work_dir = Path(args.work_root) / video_id
@@ -1567,16 +1705,18 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Verify CLI help works**
+- [ ] **Step 3: Verify CLI help + preset guard**
 
 Run: `uv run vpm2 --help`
 Expected: prints usage with the flags above (no network call).
+Run: `uv run vpm2 "http://x" --voice-mode preset`
+Expected: exits with the error `--voice-mode preset requires --preset-ref ...` (argparse, no network).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add vpm2/cli.py
-git commit -m "feat: add CLI entrypoint"
+git add vpm2/preflight.py vpm2/cli.py
+git commit -m "feat: add CLI entrypoint and preflight checks"
 ```
 
 ---
@@ -1603,12 +1743,13 @@ Append to `README.md`:
 
 1. Start Ollama and pull the model: `ollama pull qwen2.5:7b-instruct`
 2. Pick a short (~30–60s) English clip URL.
-3. Preset voice (provide a clean PT reference wav):
+3. Cloning voice (default, zero-config — reference auto-extracted from the video):
+   `uv run vpm2 "<url>"`
+4. Preset voice (provide a clean PT reference wav to compare):
    `uv run vpm2 "<url>" --voice-mode preset --preset-ref ref_pt.wav`
-4. Cloning voice (reference auto-extracted from the video):
-   `uv run vpm2 "<url>" --voice-mode cloning`
 5. Inspect artifacts in `work/<id>/`: open `03_transcript.json`,
-   `04_translation.json`, listen to `05_clips/*.wav`, then play `06_final.mp4`.
+   `04_translation.json`, listen to `05_clips/*.wav` and `ref_voice.wav`, then play
+   `06_final.mp4` (the muted second track is the original English audio).
 6. Re-run the same command — every stage should print "skipping (done)".
 7. Force a re-translate: `uv run vpm2 "<url>" --force translate`.
 ```
@@ -1624,7 +1765,28 @@ git commit -m "docs: add end-to-end smoke test instructions"
 
 ## Notes for the implementer
 
-- **Stage order is fixed** in `STAGES`; `--force <stage>` reruns from that name onward (matches the resume design).
-- **VRAM:** stages run sequentially and each heavy model is created inside `run()` and dropped when it returns, so ASR/LLM/TTS never coexist. Do not hoist model creation to module scope.
-- **External APIs may drift:** Tasks 10, 12, 13 contain explicit verify steps for `faster-whisper`, `chatterbox`, and the VAD import. If the installed signature differs, adjust the call but keep the documented `TTSBackend.synth` / stage interfaces unchanged so neighboring tasks still compose.
-- **Future phases (not in this plan):** UI, ASR ensemble + judge, diarization, aggressive sync, XTTS-v2 fallback backend (add a new `vpm2/tts/xtts_backend.py` behind `get_backend`).
+- **Build layout:** the package is a **flat** top-level `vpm2/` (NOT `src/vpm2/`),
+  pinned via `[tool.hatch.build.targets.wheel] packages = ["vpm2"]`. Every path in
+  this plan assumes that. Don't let `uv` regenerate a `src/` layout.
+- **Stage order is fixed** in `STAGES`; `--force <stage>` reruns from that name onward
+  (matches the resume design) and raises on an unknown stage name.
+- **VRAM:** stages run sequentially and each heavy model is created inside `run()` and
+  dropped when it returns, so ASR/LLM/TTS never coexist. Do not hoist model creation to
+  module scope. (faster-whisper/CTranslate2 frees on `del`; Chatterbox's torch model is
+  freed when the `ChatterboxBackend` goes out of scope at the end of the synth stage.)
+- **External APIs may drift:** Tasks 10, 12, 13 contain explicit verify steps for
+  `faster-whisper`, `chatterbox`, and the VAD import. If the installed signature differs,
+  adjust the call but keep the documented `TTSBackend.synth` / stage interfaces unchanged
+  so neighboring tasks still compose. Task 12 (torch cu128 + chatterbox) is the most
+  likely to need iteration.
+- **Intentional v1 limitations (do NOT "fix" these without asking):**
+  - The **translate stage is serial and all-or-nothing** — if it fails mid-video the
+    whole stage re-runs on resume (per-segment caching is a future improvement).
+  - An input video with **no detected speech** yields an empty transcript, which
+    `valid_transcript` treats as not-done; that's acceptable for v1 (single-speaker
+    narration is the target).
+  - Only the external-command stages (`extract_audio`, `assemble`) write to
+    `work/<id>/logs/`; the Python/model stages stream progress to the console.
+- **Future phases (not in this plan):** UI, ASR ensemble + judge, diarization,
+  aggressive sync, XTTS-v2 fallback backend (add a new `vpm2/tts/xtts_backend.py`
+  behind `get_backend`).
