@@ -5,6 +5,7 @@ from vpm2.stages.extract_audio import ExtractAudioStage
 from vpm2.stages.transcribe import TranscribeStage
 from vpm2.stages.translate import TranslateStage
 from vpm2.stages.synthesize import SynthesizeStage
+from vpm2.stages.assemble import AssembleStage
 
 # Concrete stages are appended in their own tasks to keep imports light here.
 STAGES: list[Stage] = [
@@ -13,6 +14,7 @@ STAGES: list[Stage] = [
     TranscribeStage(),
     TranslateStage(),
     SynthesizeStage(),
+    AssembleStage(),
 ]
 
 
