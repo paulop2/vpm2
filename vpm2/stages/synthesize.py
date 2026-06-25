@@ -48,7 +48,8 @@ class SynthesizeStage(Stage):
         clips_dir.mkdir(parents=True, exist_ok=True)
 
         if ctx.config.voice_mode == "cloning":
-            ref = _extract_reference(ctx)
+            with ctx.reporter.spinner("extraindo voz de referência do vídeo"):
+                ref = _extract_reference(ctx)
         elif ctx.config.voice_mode == "preset":
             if not ctx.config.preset_ref_wav:
                 raise ValueError(
@@ -62,17 +63,20 @@ class SynthesizeStage(Stage):
         else:
             raise ValueError(f"unknown voice_mode: {ctx.config.voice_mode}")
 
-        backend = get_backend(ctx.config)
+        with ctx.reporter.spinner("carregando modelo de voz (Chatterbox TTS)"):
+            backend = get_backend(ctx.config)
         segs = read_json(ctx.path("04_translation.json"))["segments"]
         out = []
-        for s in segs:
-            audio = backend.synth(s["text_pt"], ref)
-            name = f"{s['id']:04d}.wav"
-            sf.write(str(clips_dir / name), audio, backend.sample_rate)
-            out.append({
-                "id": s["id"], "start": s["start"], "end": s["end"],
-                "clip": name, "duration": len(audio) / backend.sample_rate,
-            })
+        with ctx.reporter.bar("sintetizando voz PT-BR", total=len(segs)) as bar:
+            for s in segs:
+                audio = backend.synth(s["text_pt"], ref)
+                name = f"{s['id']:04d}.wav"
+                sf.write(str(clips_dir / name), audio, backend.sample_rate)
+                out.append({
+                    "id": s["id"], "start": s["start"], "end": s["end"],
+                    "clip": name, "duration": len(audio) / backend.sample_rate,
+                })
+                bar.advance()
         write_json(self.output_path(ctx), {
             "sample_rate": backend.sample_rate, "segments": out,
         })

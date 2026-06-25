@@ -25,8 +25,9 @@ class DownloadStage(Stage):
             "quiet": True,
             "noprogress": True,
         }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(ctx.url, download=True)
+        with ctx.reporter.spinner("baixando vídeo do YouTube"):
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(ctx.url, download=True)
         write_json(ctx.path("01_meta.json"), {
             "id": info.get("id", ""),
             "title": info.get("title", ""),

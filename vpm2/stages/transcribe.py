@@ -17,25 +17,31 @@ class TranscribeStage(Stage):
         return valid_transcript(self.output_path(ctx))
 
     def run(self, ctx: Context) -> None:
-        model = WhisperModel(
-            ctx.config.asr_model, device="cuda", compute_type="float16",
-        )
-        segments, _info = model.transcribe(
+        with ctx.reporter.spinner("carregando modelo Whisper (pode baixar na 1ª vez)"):
+            model = WhisperModel(
+                ctx.config.asr_model, device="cuda", compute_type="float16",
+            )
+        segments, info = model.transcribe(
             str(ctx.path("02_audio.wav")),
             language=ctx.config.source_lang,
             vad_filter=True,
         )
+        # faster-whisper yields segments lazily; info.duration is the total
+        # audio length, so seg.end gives us a real % through the file.
         out_segments = []
-        for i, seg in enumerate(segments):
-            text = seg.text.strip()
-            if not text:
-                continue
-            out_segments.append({
-                "id": i,
-                "start": float(seg.start),
-                "end": float(seg.end),
-                "text": text,
-            })
+        with ctx.reporter.bar("transcrevendo", total=float(info.duration),
+                              show_count=False) as bar:
+            for i, seg in enumerate(segments):
+                bar.update(completed=float(seg.end))
+                text = seg.text.strip()
+                if not text:
+                    continue
+                out_segments.append({
+                    "id": i,
+                    "start": float(seg.start),
+                    "end": float(seg.end),
+                    "text": text,
+                })
         write_json(self.output_path(ctx), {
             "language": ctx.config.source_lang,
             "segments": out_segments,

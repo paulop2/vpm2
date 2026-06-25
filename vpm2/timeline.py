@@ -21,10 +21,18 @@ def plan_timeline(segments, video_duration, max_speed=1.25, allow_push=True):
             boundary = float(segs[i + 1]["start"])
         else:
             boundary = float(video_duration)
-        available = max(boundary - target_start, 0.0)
+        # Negative when push has already carried us past this clip's slot, i.e.
+        # we're running behind schedule.
+        available = boundary - target_start
 
         src = float(s["duration"])
-        if available > 0 and src > available:
+        if src <= 0:
+            speed = 1.0
+        elif available <= 0:
+            # Behind schedule -> compress as hard as allowed to claw time back.
+            # (The old code reset to 1.0 here, so the dub drifted unbounded.)
+            speed = max_speed
+        elif src > available:
             speed = min(src / available, max_speed)
         else:
             speed = 1.0

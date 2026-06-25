@@ -5,11 +5,13 @@ description = "Translate English YouTube videos into a synced PT-BR dub, fully l
 requires-python = ">=3.11"
 dependencies = [
     "yt-dlp",
+    "python-dotenv",
     "requests",
     "soundfile",
     "numpy",
     "faster-whisper",
     "chatterbox-tts>=0.1.7",
+    "rich",
 ]
 
 [project.scripts]

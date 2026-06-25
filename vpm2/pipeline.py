@@ -19,9 +19,13 @@ STAGES: list[Stage] = [
 
 
 def run_pipeline(ctx: Context, stages: list[Stage] | None = None,
-                 force_from: str | None = None) -> list[str]:
+                 force_from: str | None = None, reporter=None) -> list[str]:
     stages = STAGES if stages is None else stages
     ctx.work_dir.mkdir(parents=True, exist_ok=True)
+
+    if reporter is not None:
+        ctx.reporter = reporter
+    reporter = ctx.reporter
 
     if force_from is not None and force_from not in {s.name for s in stages}:
         raise ValueError(
@@ -29,15 +33,16 @@ def run_pipeline(ctx: Context, stages: list[Stage] | None = None,
             f"Valid stages: {[s.name for s in stages]}"
         )
 
+    total = len(stages)
     forcing = False
     executed: list[str] = []
-    for stage in stages:
+    for i, stage in enumerate(stages, start=1):
         if force_from is not None and stage.name == force_from:
             forcing = True
         if forcing or not stage.is_done(ctx):
-            print(f"[vpm2] running stage: {stage.name}")
+            reporter.stage_banner(i, total, stage.name)
             stage.run(ctx)
             executed.append(stage.name)
         else:
-            print(f"[vpm2] skipping (done): {stage.name}")
+            reporter.stage_banner(i, total, stage.name, skipped=True)
     return executed

@@ -51,6 +51,20 @@ def test_last_segment_bounded_by_video_duration():
     assert placed[0].out_duration == pytest.approx(3.2)
 
 
+def test_behind_schedule_clip_compresses_at_max_speed():
+    # clip0 overruns hugely and pushes the cursor past clip1's whole slot, so
+    # clip1 is "behind" (available <= 0). It must run at max_speed to claw time
+    # back instead of drifting at 1.0x (the old bug).
+    segs = [seg(0, 0.0, 4.0, 20.0), seg(1, 5.0, 7.0, 1.0), seg(2, 9.0, 11.0, 1.0)]
+    placed = plan_timeline(segs, video_duration=30.0,
+                           max_speed=1.25, allow_push=True)
+    # clip0: available 5, src 20 -> 1.25, out 16, cursor 16
+    # clip1: target max(5,16)=16, next start 9 -> available -7 -> behind
+    assert placed[1].start == pytest.approx(16.0)
+    assert placed[1].speed == pytest.approx(1.25)
+    assert placed[1].out_duration == pytest.approx(0.8)
+
+
 def test_no_push_keeps_next_at_original_start():
     segs = [seg(0, 0.0, 4.0, 10.0), seg(1, 5.0, 7.0, 1.0)]
     placed = plan_timeline(segs, video_duration=20.0,

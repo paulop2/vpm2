@@ -12,7 +12,7 @@ from vpm2.timeline import plan_timeline
 
 
 def _atempo(in_path: Path, out_path: Path, speed: float) -> None:
-    # ffmpeg atempo supports 0.5..2.0 per filter; our cap is <=1.25 so one pass.
+    # ffmpeg atempo supports 0.5..2.0 per filter; our cap is <=2.0 so one pass.
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(in_path),
          "-filter:a", f"atempo={speed:.4f}", str(out_path)],
@@ -47,9 +47,11 @@ class AssembleStage(Stage):
         total_samples = int((video_duration + 5.0) * sr)
         buffer = np.zeros(total_samples, dtype="float32")
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, \
+                ctx.reporter.bar("montando trilha PT-BR", total=len(placed)) as bar:
             tmp = Path(tmp)
             for pc in placed:
+                bar.advance()
                 src = clips_dir / by_id[pc.id]["clip"]
                 if pc.speed > 1.001:
                     sped = tmp / f"{pc.id:04d}_s.wav"
@@ -91,5 +93,6 @@ class AssembleStage(Stage):
                 "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
             ]
         log = ctx.log_dir() / "assemble.log"
-        with open(log, "w") as lf:
-            subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
+        with ctx.reporter.spinner("muxando vídeo + áudio PT-BR"):
+            with open(log, "w") as lf:
+                subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
