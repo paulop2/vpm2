@@ -14,7 +14,12 @@ from vpm2.url import ensure_single_video, sanitize_url
 
 def _resolve_id(url: str) -> str:
     try:
-        with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+        # extract_flat keeps yt-dlp from recursing into a channel/playlist's
+        # videos -- it returns the playlist shell (_type="playlist") instantly,
+        # so ensure_single_video can reject it instead of erroring out partway
+        # through extracting an entry (e.g. an age-gated video).
+        opts = {"quiet": True, "skip_download": True, "extract_flat": "in_playlist"}
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception:
         info = None
