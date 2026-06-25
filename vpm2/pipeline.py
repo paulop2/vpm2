@@ -1,8 +1,11 @@
 from vpm2.context import Context
 from vpm2.stages.base import Stage
+from vpm2.stages.download import DownloadStage
 
 # Concrete stages are appended in their own tasks to keep imports light here.
-STAGES: list[Stage] = []
+STAGES: list[Stage] = [
+    DownloadStage(),
+]
 
 
 def run_pipeline(ctx: Context, stages: list[Stage] | None = None,
