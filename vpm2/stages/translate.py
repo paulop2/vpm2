@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -37,12 +38,21 @@ class TranslateStage(Stage):
     def run(self, ctx: Context) -> None:
         data = read_json(ctx.path("03_transcript.json"))
         segs = data["segments"]
-        out = []
+
+        def translate_at(i: int) -> str:
+            prev = segs[i - 1]["text"] if i > 0 else None
+            nxt = segs[i + 1]["text"] if i + 1 < len(segs) else None
+            return self._translate_one(ctx, segs[i]["text"], prev, nxt)
+
+        # Fan out across Ollama; segments are independent so order doesn't matter
+        # for correctness -- we slot each result back by its original index.
+        texts_pt: list[str | None] = [None] * len(segs)
+        workers = max(1, min(ctx.config.translate_workers, len(segs) or 1))
         with ctx.reporter.bar("traduzindo (EN→PT-BR)", total=len(segs)) as bar:
-            for i, s in enumerate(segs):
-                prev = segs[i - 1]["text"] if i > 0 else None
-                nxt = segs[i + 1]["text"] if i + 1 < len(segs) else None
-                text_pt = self._translate_one(ctx, s["text"], prev, nxt)
-                out.append({**s, "text_pt": text_pt})
-                bar.advance()
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(translate_at, i): i for i in range(len(segs))}
+                for fut in as_completed(futures):
+                    texts_pt[futures[fut]] = fut.result()
+                    bar.advance()
+        out = [{**s, "text_pt": texts_pt[i]} for i, s in enumerate(segs)]
         write_json(self.output_path(ctx), {"segments": out})

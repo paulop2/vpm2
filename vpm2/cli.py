@@ -49,6 +49,8 @@ def main(argv=None) -> int:
     ap.add_argument("--force", default=None,
                     help="rerun from this stage name onward")
     ap.add_argument("--ollama-model", default=None)
+    ap.add_argument("--translate-workers", type=int, default=None,
+                    help="concurrent translation requests to Ollama (default 8)")
     ap.add_argument("--asr-model", default=None)
     ap.add_argument("--work-root", default="work")
     ap.add_argument("--keep-original-audio", action="store_true",
@@ -68,6 +70,8 @@ def main(argv=None) -> int:
         config.max_speed = args.max_speed
     if args.ollama_model:
         config.ollama_model = args.ollama_model
+    if args.translate_workers is not None:
+        config.translate_workers = args.translate_workers
     if args.asr_model:
         config.asr_model = args.asr_model
 
