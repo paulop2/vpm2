@@ -9,17 +9,20 @@ from vpm2.config import Config
 from vpm2.context import Context
 from vpm2.pipeline import run_pipeline
 from vpm2.preflight import check_ffmpeg, check_ollama
+from vpm2.url import ensure_single_video, sanitize_url
 
 
 def _resolve_id(url: str) -> str:
     try:
         with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
             info = ydl.extract_info(url, download=False)
+    except Exception:
+        info = None
+    if info is not None:
+        ensure_single_video(url, info)  # fail fast on channels/playlists
         vid = info.get("id")
         if vid:
             return vid
-    except Exception:
-        pass
     return re.sub(r"[^A-Za-z0-9_-]", "_", url)[-40:]
 
 
@@ -52,9 +55,10 @@ def main(argv=None) -> int:
     check_ffmpeg()
     check_ollama(config)
 
-    video_id = _resolve_id(args.url)
+    url = sanitize_url(args.url)
+    video_id = _resolve_id(url)
     work_dir = Path(args.work_root) / video_id
-    ctx = Context(url=args.url, work_dir=work_dir, config=config)
+    ctx = Context(url=url, work_dir=work_dir, config=config)
 
     run_pipeline(ctx, force_from=args.force)
     final = ctx.path("06_final.mp4")
