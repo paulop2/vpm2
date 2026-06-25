@@ -49,6 +49,37 @@ segment overruns its gap.
 2. Install Ollama and pull a translation model: `ollama pull qwen3:8b`
 3. Install deps: `uv sync`
 4. Install a CUDA 12.8 PyTorch build (see Task: TTS).
+5. (Optional) Pre-download the ASR + TTS weights so the first run doesn't stall —
+   see "Model downloads & caching" below.
+
+## Model downloads & caching
+
+Three models power the pipeline, downloaded from **different** places:
+
+| Model | Stage | Source | Size | When it downloads |
+|---|---|---|---|---|
+| faster-whisper `large-v3` | `transcribe` | HuggingFace Hub | ~2.9 GB | first run |
+| Chatterbox Multilingual | `synthesize` | HuggingFace Hub | ~2–3 GB | first run |
+| `qwen3:8b` (translation LLM) | `translate` | Ollama (`ollama pull`) | ~5 GB | `ollama pull` |
+
+The HuggingFace weights (Whisper, Chatterbox) are **downloaded once** and cached in
+`~/.cache/huggingface/hub`. They are **not** re-downloaded on later runs — every run
+after the first loads them from disk. Only the very first video pays this one-time
+cost (it happens lazily when each stage first loads its model, not during `uv sync`).
+
+To pre-warm the cache during setup (so the first real run is fast and the system is
+fully offline-ready), trigger the downloads ahead of time:
+
+```bash
+# ASR (faster-whisper large-v3)
+uv run python -c "from faster_whisper import WhisperModel; WhisperModel('large-v3', device='cuda', compute_type='float16')"
+
+# TTS (Chatterbox Multilingual)
+uv run python -c "from chatterbox.mtl_tts import ChatterboxMultilingualTTS; ChatterboxMultilingualTTS.from_pretrained(device='cuda')"
+```
+
+The translation model is separate and lives in Ollama's own store — pull it (and any
+alternative you want to compare) with `ollama pull <model>`.
 
 ## Usage
 
