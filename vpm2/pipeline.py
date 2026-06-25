@@ -3,12 +3,14 @@ from vpm2.stages.base import Stage
 from vpm2.stages.download import DownloadStage
 from vpm2.stages.extract_audio import ExtractAudioStage
 from vpm2.stages.transcribe import TranscribeStage
+from vpm2.stages.translate import TranslateStage
 
 # Concrete stages are appended in their own tasks to keep imports light here.
 STAGES: list[Stage] = [
     DownloadStage(),
     ExtractAudioStage(),
     TranscribeStage(),
+    TranslateStage(),
 ]
 
 
