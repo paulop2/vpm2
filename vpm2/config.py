@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     asr_model: str = "large-v3"
-    ollama_model: str = "qwen2.5:7b-instruct"
+    ollama_model: str = "qwen3:8b"
     ollama_url: str = "http://localhost:11434"
     tts_backend: str = "chatterbox"
     voice_mode: str = "cloning"         # "cloning" | "preset"
