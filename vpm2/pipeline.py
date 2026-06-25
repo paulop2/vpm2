@@ -1,10 +1,12 @@
 from vpm2.context import Context
 from vpm2.stages.base import Stage
 from vpm2.stages.download import DownloadStage
+from vpm2.stages.extract_audio import ExtractAudioStage
 
 # Concrete stages are appended in their own tasks to keep imports light here.
 STAGES: list[Stage] = [
     DownloadStage(),
+    ExtractAudioStage(),
 ]
 
 
