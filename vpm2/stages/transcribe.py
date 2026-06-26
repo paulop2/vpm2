@@ -4,6 +4,7 @@ from faster_whisper import WhisperModel
 
 from vpm2.artifacts import valid_transcript, write_json
 from vpm2.context import Context
+from vpm2.gpu import free_cuda
 from vpm2.stages.base import Stage
 
 
@@ -47,3 +48,4 @@ class TranscribeStage(Stage):
             "segments": out_segments,
         })
         del model
+        free_cuda()

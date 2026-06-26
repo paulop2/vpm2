@@ -6,6 +6,11 @@ class Config:
     asr_model: str = "large-v3"
     ollama_model: str = "qwen3:8b"
     ollama_url: str = "http://localhost:11434"
+    # Segments translate independently (context comes from the source transcript,
+    # not from prior outputs), so we fan out concurrent requests to Ollama. They
+    # share the one loaded model server-side -- only KV-cache grows per slot, so
+    # this costs no extra resident VRAM. Keep modest to bound that KV-cache.
+    translate_workers: int = 8
     tts_backend: str = "chatterbox"
     voice_mode: str = "cloning"         # "cloning" | "preset"
     preset_ref_wav: str | None = None   # required when voice_mode == "preset"

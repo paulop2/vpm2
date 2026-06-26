@@ -1,5 +1,7 @@
+import os
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -50,15 +52,27 @@ class AssembleStage(Stage):
         with tempfile.TemporaryDirectory() as tmp, \
                 ctx.reporter.bar("montando trilha PT-BR", total=len(placed)) as bar:
             tmp = Path(tmp)
+            # Time-stretching is an independent ffmpeg subprocess per clip (releases
+            # the GIL), so stretch every overrun clip up front in parallel; the
+            # buffer summation below stays sequential to keep overlap-add correct.
+            sped: dict[int, Path] = {}
+            to_stretch = [pc for pc in placed if pc.speed > 1.001]
+            if to_stretch:
+                workers = min(len(to_stretch), (os.cpu_count() or 4))
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = []
+                    for pc in to_stretch:
+                        dst = tmp / f"{pc.id:04d}_s.wav"
+                        sped[pc.id] = dst
+                        futs.append(ex.submit(
+                            _atempo, clips_dir / by_id[pc.id]["clip"], dst, pc.speed))
+                    for f in futs:
+                        f.result()  # surface ffmpeg failures
+
             for pc in placed:
                 bar.advance()
-                src = clips_dir / by_id[pc.id]["clip"]
-                if pc.speed > 1.001:
-                    sped = tmp / f"{pc.id:04d}_s.wav"
-                    _atempo(src, sped, pc.speed)
-                    audio, csr = sf.read(str(sped))
-                else:
-                    audio, csr = sf.read(str(src))
+                read_path = sped.get(pc.id) or clips_dir / by_id[pc.id]["clip"]
+                audio, csr = sf.read(str(read_path))
                 if audio.ndim > 1:
                     audio = audio.mean(axis=1)
                 if csr != sr:
