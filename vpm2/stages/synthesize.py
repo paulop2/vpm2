@@ -5,6 +5,7 @@ import soundfile as sf
 
 from vpm2.artifacts import read_json, valid_clips, write_json
 from vpm2.context import Context
+from vpm2.gpu import free_cuda
 from vpm2.stages.base import Stage
 from vpm2.tts.base import get_backend
 from vpm2.voice_sample import pick_reference_window
@@ -111,6 +112,9 @@ class SynthesizeStage(Stage):
                     "clip": dest.name, "duration": duration,
                 })
                 bar.advance()
+        if backend is not None:
+            del backend
+            free_cuda()
         write_json(self.output_path(ctx), {
             "sample_rate": sample_rate, "segments": out,
         })
