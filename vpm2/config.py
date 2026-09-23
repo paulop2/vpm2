@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class Config:
     asr_backend: str = "parakeet"
     parakeet_model: str = "nvidia/parakeet-tdt-0.6b-v2"
+    parakeet_chunk_seconds: int = 120
     asr_model: str = "large-v3"
     ollama_model: str = "qwen3:8b"
     ollama_url: str = "http://localhost:11434"
