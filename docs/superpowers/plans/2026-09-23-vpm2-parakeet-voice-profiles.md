@@ -521,6 +521,202 @@ Se cair no branch de falha: em vez disso, ajuste o default para `"whisper"` + o 
 
 ---
 
+### Task P3.5: Chunking de áudio longo no ParakeetBackend
+
+**Motivação:** o Parakeet transcreve até ~24 min num passe; acima disso o NeMo falha com `CUDA driver error: device not ready` (verificado: 27,6 min falha; fatiado em 120s passa 14/14). O caso de uso de referência (~26 min) precisa de chunking com ajuste de offset.
+
+**Files:**
+- Modify: `vpm2/asr/parakeet_backend.py`
+- Modify: `vpm2/config.py` (add `parakeet_chunk_seconds`)
+- Create: `tests/test_parakeet_chunking.py`
+
+**Interfaces:**
+- Produces:
+  - `plan_chunks(total_duration: float, chunk_seconds: int) -> list[tuple[float, float]]`
+  - `offset_segments(segments: list[RawSegment], offset: float) -> list[RawSegment]`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_parakeet_chunking.py`:
+
+```python
+import numpy as np
+import soundfile as sf
+
+from vpm2.asr.base import RawSegment
+from vpm2.asr.parakeet_backend import (
+    ParakeetBackend, offset_segments, parse_hypothesis, plan_chunks,
+)
+from vpm2.config import Config
+
+
+class FakeHyp:
+    def __init__(self, text, timestamp=None):
+        self.text = text
+        self.timestamp = timestamp
+
+
+class FakeModel:
+    def __init__(self, sr=16000):
+        self.sr = sr
+        self.chunk_lengths = []
+
+    def transcribe(self, audios, timestamps=True):
+        self.chunk_lengths.append(audios[0].shape[0])
+        n = audios[0].shape[0] / self.sr
+        return [FakeHyp("x", {"segment": [
+            {"segment": "x", "start": 0.0, "end": n}]})]
+
+
+def test_plan_chunks_splits_evenly_and_last_is_short():
+    assert plan_chunks(250.0, 120) == [(0.0, 120.0), (120.0, 240.0), (240.0, 250.0)]
+
+
+def test_plan_chunks_single_when_shorter_than_chunk():
+    assert plan_chunks(30.0, 120) == [(0.0, 30.0)]
+
+
+def test_offset_segments_shifts_times():
+    segs = [RawSegment(0.0, 1.0, "a"), RawSegment(2.0, 3.0, "b")]
+    assert offset_segments(segs, 120.0) == [
+        RawSegment(120.0, 121.0, "a"),
+        RawSegment(122.0, 123.0, "b"),
+    ]
+
+
+def test_transcribe_chunks_and_offsets(tmp_path):
+    sr = 16000
+    src = tmp_path / "long.wav"
+    sf.write(str(src), np.zeros(sr * 3, dtype="float32"), sr)
+
+    backend = ParakeetBackend(Config(parakeet_chunk_seconds=1))
+    backend._model = FakeModel(sr=sr)
+
+    segs = backend.transcribe(src)
+
+    assert backend._model.chunk_lengths == [sr, sr, sr]
+    assert segs == [
+        RawSegment(0.0, 1.0, "x"),
+        RawSegment(1.0, 2.0, "x"),
+        RawSegment(2.0, 3.0, "x"),
+    ]
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `wsl -d Ubuntu -- bash -lc 'cd /home/pvs/projetos/vpm2 && uv run pytest tests/test_parakeet_chunking.py -q'`
+Expected: FAIL — `ImportError: cannot import name 'plan_chunks'`
+
+- [ ] **Step 3: Add the config field**
+
+In `vpm2/config.py`, add after `parakeet_model`:
+
+```python
+    parakeet_chunk_seconds: int = 120
+```
+
+- [ ] **Step 4: Implement chunking**
+
+Replace the contents of `vpm2/asr/parakeet_backend.py` with:
+
+```python
+from pathlib import Path
+
+from vpm2.asr.base import ASRBackend, RawSegment
+from vpm2.config import Config
+
+
+def parse_hypothesis(hyp, audio_duration: float | None = None) -> list[RawSegment]:
+    timestamp = getattr(hyp, "timestamp", None) or {}
+    items = timestamp.get("segment") or []
+    if items:
+        return [
+            RawSegment(float(t["start"]), float(t["end"]), str(t["segment"]))
+            for t in items
+        ]
+    text = (getattr(hyp, "text", "") or "").strip()
+    if not text:
+        return []
+    return [RawSegment(0.0, float(audio_duration or 0.0), text)]
+
+
+def plan_chunks(total_duration: float, chunk_seconds: int) -> list[tuple[float, float]]:
+    chunks: list[tuple[float, float]] = []
+    start = 0.0
+    while start < total_duration:
+        end = min(start + chunk_seconds, total_duration)
+        chunks.append((start, end))
+        start = end
+    return chunks
+
+
+def offset_segments(segments: list[RawSegment], offset: float) -> list[RawSegment]:
+    return [
+        RawSegment(s.start + offset, s.end + offset, s.text)
+        for s in segments
+    ]
+
+
+class ParakeetBackend(ASRBackend):
+    def __init__(self, config: Config):
+        self._config = config
+        self._model = None
+
+    def _ensure_model(self):
+        if self._model is None:
+            import nemo.collections.asr as nemo_asr
+            self._model = nemo_asr.models.ASRModel.from_pretrained(
+                model_name=self._config.parakeet_model,
+            )
+            self._model.eval()
+
+    def transcribe(self, audio_path: Path) -> list[RawSegment]:
+        import soundfile as sf
+
+        data, sr = sf.read(str(audio_path), dtype="float32")
+        if data.ndim > 1:
+            data = data.mean(axis=1)
+        duration = len(data) / sr
+        chunks = plan_chunks(duration, self._config.parakeet_chunk_seconds)
+
+        self._ensure_model()
+        out: list[RawSegment] = []
+        for start, end in chunks:
+            piece = data[int(start * sr):int(end * sr)]
+            if len(piece) == 0:
+                continue
+            results = self._model.transcribe([piece], timestamps=True)
+            if not results:
+                continue
+            segs = parse_hypothesis(results[0], audio_duration=len(piece) / sr)
+            out.extend(offset_segments(segs, start))
+        return out
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `wsl -d Ubuntu -- bash -lc 'cd /home/pvs/projetos/vpm2 && uv run pytest tests/test_parakeet_chunking.py tests/test_parakeet_parse.py -q'`
+Expected: PASS (7 tests)
+
+- [ ] **Step 6: Full suite**
+
+Run: `wsl -d Ubuntu -- bash -lc 'cd /home/pvs/projetos/vpm2 && uv run pytest -q'`
+Expected: PASS
+
+- [ ] **Step 7: GPU verification on the long file (checkpoint)**
+
+Run the previously-failing long audio through the updated backend:
+`wsl -d Ubuntu -- bash -lc 'cd /home/pvs/projetos/vpm2 && uv run python scripts/check_parakeet.py work/GpA9UM7QGag/02_audio.wav'`
+Expected: agora **passa** (imprime segmentos ao longo de ~27 min, sem `CUDA driver error`). Se ainda falhar, reduza `parakeet_chunk_seconds` (ex: 60) e repita.
+
+- [ ] **Step 8: Commit**
+
+```bash
+wsl -d Ubuntu -- bash -lc 'cd /home/pvs/projetos/vpm2 && git add vpm2/asr/parakeet_backend.py vpm2/config.py tests/test_parakeet_chunking.py && git commit -m "feat: chunk long audio in Parakeet backend"`
+```
+
+---
+
 ### Task P4: Módulo puro de perfis de voz
 
 **Files:**
