@@ -41,9 +41,17 @@ def main(argv=None) -> int:
     load_dotenv()
     ap = argparse.ArgumentParser(prog="vpm2")
     ap.add_argument("url")
-    ap.add_argument("--voice-mode", choices=["cloning", "preset"], default="cloning",
-                    help="cloning = auto-extract reference from the video (zero-config); "
-                         "preset = use --preset-ref clip")
+    ap.add_argument("--voice-mode", choices=["cloning", "preset", "profile"],
+                    default="cloning",
+                    help="cloning = auto-extract reference from the video; "
+                         "preset = use --preset-ref clip; "
+                         "profile = reuse a saved voice profile (--voice-profile)")
+    ap.add_argument("--voice-profile", default=None,
+                    help="saved voice profile id (required when --voice-mode profile)")
+    ap.add_argument("--save-profile", default=None,
+                    help="persist the auto-extracted reference under this profile id")
+    ap.add_argument("--asr-backend", choices=["parakeet", "whisper"],
+                    default="parakeet")
     ap.add_argument("--preset-ref", default=None,
                     help="clean PT reference wav (required when --voice-mode preset)")
     ap.add_argument("--force", default=None,
@@ -66,6 +74,11 @@ def main(argv=None) -> int:
 
     config = Config(voice_mode=args.voice_mode, preset_ref_wav=args.preset_ref,
                     keep_original_audio=args.keep_original_audio)
+    if args.voice_mode == "profile" and not args.voice_profile:
+        ap.error("--voice-mode profile requires --voice-profile <id>")
+    config.voice_profile = args.voice_profile
+    config.save_profile = args.save_profile
+    config.asr_backend = args.asr_backend
     if args.max_speed is not None:
         config.max_speed = args.max_speed
     if args.ollama_model:
