@@ -15,7 +15,12 @@ class Config:
     # this costs no extra resident VRAM. Keep modest to bound that KV-cache.
     translate_workers: int = 8
     tts_backend: str = "chatterbox"
-    voice_mode: str = "cloning"         # "cloning" | "preset"
+    voice_mode: str = "cloning"         # "cloning" | "preset" | "profile"
+    voice_profile: str | None = None    # required when voice_mode == "profile"
+    voices_dir: str = "voices"
+    save_profile: str | None = None     # when set + cloning, persist the extracted reference
+    tts_cache: bool = True              # reuse clips across videos by hash(profile, text)
+    tts_cache_dir: str = "work/_tts_cache"
     preset_ref_wav: str | None = None   # required when voice_mode == "preset"
     source_lang: str = "en"
     target_lang: str = "pt"
