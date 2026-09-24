@@ -26,7 +26,7 @@ def make_ctx(tmp_path):
     # preset mode with a real ref wav avoids the VAD-based reference extraction
     ref = tmp_path / "ref.wav"
     sf.write(str(ref), np.zeros(SR, dtype="float32"), SR)
-    cfg = Config(voice_mode="preset", preset_ref_wav=str(ref))
+    cfg = Config(voice_mode="preset", preset_ref_wav=str(ref), tts_cache=False)
     return Context(url="x", work_dir=tmp_path, config=cfg)
 
 

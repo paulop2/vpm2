@@ -10,6 +10,7 @@ dependencies = [
     "soundfile",
     "numpy",
     "faster-whisper",
+    "nemo_toolkit[asr]",
     "chatterbox-tts>=0.1.7",
     "rich",
 ]
