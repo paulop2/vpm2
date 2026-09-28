@@ -1,0 +1,26 @@
+{
+  "$schema": "../../harness/delivery-queue/schema/policy-v1.json",
+  "version": 1,
+  "repository": "paulop2/vpm2",
+  "mergeMode": "auto",
+  "defaultBranch": "master",
+  "project": null,
+  "fallbackEligibility": "label:delivery-queue-ready",
+  "worktreeSetupCommands": ["uv --version"],
+  "requiredChecks": [
+    "uv run --no-project --python 3.12 --with pytest --with numpy --with soundfile --with requests --with yt-dlp --with rich --with python-dotenv python -m pytest -q -p no:cacheprovider"
+  ],
+  "requiredRemoteChecks": [],
+  "postMergeSetupCommands": ["uv --version"],
+  "postMergeRetries": 1,
+  "merge": {
+    "method": "merge",
+    "requireChecksOnPr": true,
+    "verifyDefaultBranchAfterMerge": true,
+    "authorizedByLocalRules": true,
+    "allowAdminBypass": false
+  },
+  "completionWithoutCode": "requires-evidence",
+  "workerTimeoutMinutes": 60,
+  "worktreeRoot": ".worktrees"
+}
