@@ -23,7 +23,7 @@ def _resolve_id(url: str) -> str:
         opts = {"quiet": True, "skip_download": True, "extract_flat": "in_playlist"}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-    except Exception:
+    except Exception:  # noqa: BLE001 - yt-dlp raises many error types; fall back to slug
         info = None
     if info is not None:
         ensure_single_video(url, info)  # fail fast on channels/playlists

@@ -20,5 +20,5 @@ def test_window_clamped_to_span_end():
     spans = [(0.0, 7.0)]  # 7s span, target 10 -> clamp to span end
     win = pick_reference_window(spans, target=10.0, min_len=6.0)
     assert win is not None
-    start, end = win
+    _start, end = win
     assert end <= 7.0

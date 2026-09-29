@@ -1,6 +1,6 @@
 import pytest
 
-from vpm2.timeline import plan_timeline, PlacedClip
+from vpm2.timeline import PlacedClip, plan_timeline
 
 
 def seg(i, start, end, duration):

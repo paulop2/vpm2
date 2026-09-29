@@ -9,6 +9,5 @@ def free_cuda() -> None:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    except Exception:
-        # No torch / no CUDA build (e.g. CI): nothing to free.
+    except Exception:  # noqa: BLE001, S110 - no torch/CUDA build (e.g. CI): nothing to free
         pass

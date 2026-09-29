@@ -35,9 +35,8 @@ def test_resolve_id_returns_video_id():
 
 def test_resolve_id_rejects_channel():
     info = {"_type": "playlist", "id": "UCxxxx", "entries": [{"id": "v1"}]}
-    with _patch_ydl(info=info):
-        with pytest.raises(SystemExit):
-            cli._resolve_id("https://www.youtube.com/@SomeChannel")
+    with _patch_ydl(info=info), pytest.raises(SystemExit):
+        cli._resolve_id("https://www.youtube.com/@SomeChannel")
 
 
 def test_resolve_id_falls_back_to_slug_on_extract_error():

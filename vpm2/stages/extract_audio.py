@@ -22,6 +22,5 @@ class ExtractAudioStage(Stage):
             "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", str(out),
         ]
         log = ctx.log_dir() / "extract_audio.log"
-        with ctx.reporter.spinner("extraindo áudio (16kHz mono)"):
-            with open(log, "w") as lf:
-                subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
+        with ctx.reporter.spinner("extraindo áudio (16kHz mono)"), open(log, "w") as lf:
+            subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)

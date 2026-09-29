@@ -1,9 +1,9 @@
-import json
-from pathlib import Path
-
 from vpm2.artifacts import (
-    read_json, write_json,
-    valid_transcript, valid_translation, valid_clips,
+    read_json,
+    valid_clips,
+    valid_transcript,
+    valid_translation,
+    write_json,
 )
 
 

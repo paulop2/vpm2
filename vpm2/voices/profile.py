@@ -1,7 +1,7 @@
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -33,7 +33,7 @@ def make_profile(profile_id, ref_wav, *, source_video, span, transcript, backend
         span_end=float(span[1]),
         transcript=transcript,
         sha256=sha256_file(ref_wav),
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         backend=backend,
     )
 
