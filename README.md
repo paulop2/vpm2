@@ -47,9 +47,11 @@ segment overruns its gap.
 
 1. Install ffmpeg: `sudo apt install ffmpeg`
 2. Install Ollama and pull a translation model: `ollama pull qwen3:8b`
-3. Install deps: `uv sync`
-4. Install a CUDA 12.8 PyTorch build (see Task: TTS).
-5. (Optional) Pre-download the ASR + TTS weights so the first run doesn't stall —
+3. Install the full GPU stack (ASR, NeMo, Chatterbox TTS): `uv sync --extra gpu`.
+   The extra pulls `torch` from the CUDA 12.8 index configured in
+   `[tool.uv.sources]`; plain `uv sync` installs only the lightweight deps needed
+   for the test suite.
+4. (Optional) Pre-download the ASR + TTS weights so the first run doesn't stall —
    see "Model downloads & caching" below.
 
 ## Model downloads & caching

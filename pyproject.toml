@@ -9,10 +9,14 @@ dependencies = [
     "requests",
     "soundfile",
     "numpy",
+    "rich",
+]
+
+[project.optional-dependencies]
+gpu = [
     "faster-whisper",
     "nemo_toolkit[asr]",
     "chatterbox-tts>=0.1.7",
-    "rich",
 ]
 
 [project.scripts]

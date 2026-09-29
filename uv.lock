@@ -4795,9 +4795,6 @@ name = "vpm2"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "chatterbox-tts" },
-    { name = "faster-whisper" },
-    { name = "nemo-toolkit", extra = ["asr"] },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "python-dotenv" },
@@ -4807,6 +4804,13 @@ dependencies = [
     { name = "yt-dlp" },
 ]
 
+[package.optional-dependencies]
+gpu = [
+    { name = "chatterbox-tts" },
+    { name = "faster-whisper" },
+    { name = "nemo-toolkit", extra = ["asr"] },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -4814,9 +4818,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "chatterbox-tts", specifier = ">=0.1.7" },
-    { name = "faster-whisper" },
-    { name = "nemo-toolkit", extras = ["asr"] },
+    { name = "chatterbox-tts", marker = "extra == 'gpu'", specifier = ">=0.1.7" },
+    { name = "faster-whisper", marker = "extra == 'gpu'" },
+    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'gpu'" },
     { name = "numpy" },
     { name = "python-dotenv" },
     { name = "requests" },
@@ -4824,6 +4828,7 @@ requires-dist = [
     { name = "soundfile" },
     { name = "yt-dlp" },
 ]
+provides-extras = ["gpu"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest" }]
