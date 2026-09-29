@@ -49,7 +49,17 @@ def valid_clips(path: Path, clips_dir: Path) -> bool:
     segs = _load_segments(path)
     if segs is None:
         return False
-    return all(
-        "clip" in s and (clips_dir / s["clip"]).exists()
-        for s in segs
-    )
+    for s in segs:
+        if "clip" not in s or not (clips_dir / s["clip"]).exists():
+            return False
+        # `duration` is the synthesized PT clip length (spec Frente 3): the
+        # assemble stage reads it, so a manifest without it (or with a
+        # non-positive value) is a partial artifact and must not mark stage 05
+        # as done.
+        try:
+            duration = float(s["duration"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not duration > 0:
+            return False
+    return True
