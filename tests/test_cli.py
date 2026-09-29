@@ -98,3 +98,33 @@ def test_main_keeps_config_defaults_without_new_flags():
     assert cfg.voices_dir == default.voices_dir
     assert cfg.tts_cache_dir == default.tts_cache_dir
     assert cfg.tts_cache == default.tts_cache
+
+
+def test_main_without_url_errors_with_code_2():
+    # With `url` optional, a bare invocation must still fail arg parsing.
+    with pytest.raises(SystemExit) as ei:
+        cli.main([])
+    assert ei.value.code == 2
+
+
+def test_main_clear_tts_cache_returns_0_without_heavy_work(tmp_path):
+    (tmp_path / "clip.wav").write_bytes(b"clip")
+
+    def _boom(*a, **k):  # pragma: no cover - only runs on regression
+        raise AssertionError("clear-tts-cache must not do heavy work")
+
+    with patch.object(cli, "check_ffmpeg", _boom), \
+         patch.object(cli, "check_ollama", _boom), \
+         patch.object(cli, "run_pipeline", _boom):
+        rc = cli.main(["--clear-tts-cache", "--tts-cache-dir", str(tmp_path)])
+
+    assert rc == 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_main_clear_tts_cache_works_without_url(tmp_path, capsys):
+    (tmp_path / "clip.wav").write_bytes(b"clip")
+    rc = cli.main(["--clear-tts-cache", "--tts-cache-dir", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[vpm2] cache de TTS limpo: 1 arquivo(s) removido(s) de" in out

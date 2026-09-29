@@ -11,6 +11,7 @@ from vpm2.context import Context
 from vpm2.pipeline import STAGES, run_pipeline
 from vpm2.preflight import check_ffmpeg, check_ollama
 from vpm2.progress import RichReporter
+from vpm2.tts_cache import clear_tts_cache
 from vpm2.url import ensure_single_video, sanitize_url
 
 
@@ -40,7 +41,8 @@ def main(argv=None) -> int:
     # the transcribe stage.
     load_dotenv()
     ap = argparse.ArgumentParser(prog="vpm2")
-    ap.add_argument("url")
+    ap.add_argument("url", nargs="?",
+                    help="URL do vídeo (opcional só com --clear-tts-cache)")
     ap.add_argument("--voice-mode", choices=["cloning", "preset", "profile"],
                     default="cloning",
                     help="cloning = auto-extract reference from the video; "
@@ -68,6 +70,8 @@ def main(argv=None) -> int:
                     help="diretório do cache de TTS (default: work/_tts_cache)")
     ap.add_argument("--no-tts-cache", action="store_true",
                     help="desliga o cache de TTS entre vídeos")
+    ap.add_argument("--clear-tts-cache", action="store_true",
+                    help="apaga os clipes do cache de TTS e sai (não roda o pipeline)")
     ap.add_argument("--keep-original-audio", action="store_true",
                     help="keep the English audio as a second track "
                          "(off by default -> output has only the PT-BR dub)")
@@ -75,6 +79,17 @@ def main(argv=None) -> int:
                     help="max time-stretch for clips that overrun their slot "
                          "(default 1.5; pitch preserved). ffmpeg atempo caps at 2.0")
     args = ap.parse_args(argv)
+
+    # Explicit cache wipe: no URL resolution, no preflight, no pipeline. Keep
+    # it a cheap, side-effect-limited op that short-circuits before that work.
+    if args.clear_tts_cache:
+        cache_dir = args.tts_cache_dir or Config().tts_cache_dir
+        removed = clear_tts_cache(cache_dir)
+        print(f"[vpm2] cache de TTS limpo: {removed} arquivo(s) removido(s) de {cache_dir}")
+        return 0
+
+    if args.url is None:
+        ap.error("informe uma URL (ou use --clear-tts-cache)")
 
     if args.voice_mode == "preset" and not args.preset_ref:
         ap.error("--voice-mode preset requires --preset-ref <clean_pt_voice.wav>")
