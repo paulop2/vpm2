@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from vpm2 import cli
+from vpm2.config import Config
 
 
 class FakeYDL:
@@ -55,3 +56,45 @@ def test_main_sanitizes_escaped_url_before_use():
         rc = cli.main([r"https://www.youtube.com/watch\?v\=a2i9h2ip-nY"])
     assert rc == 0
     assert captured["url"] == "https://www.youtube.com/watch?v=a2i9h2ip-nY"
+
+
+def test_main_rejects_unknown_force_stage():
+    # argparse choices must fail at parse time (exit 2), before any network.
+    with pytest.raises(SystemExit) as ei:
+        cli.main(["http://x", "--force", "nao-existe"])
+    assert ei.value.code == 2
+
+
+def _run_main(argv):
+    """Run cli.main with heavy work stubbed; return the Config it built."""
+    captured = {}
+    with patch.object(cli, "check_ffmpeg"), patch.object(cli, "check_ollama"), \
+         patch.object(cli, "_resolve_id", return_value="vid"), \
+         patch.object(cli, "run_pipeline",
+                      side_effect=lambda ctx, **k: captured.update(config=ctx.config)):
+        rc = cli.main(argv)
+    assert rc == 0
+    return captured["config"]
+
+
+def test_main_passes_voices_dir_to_config():
+    cfg = _run_main(["http://x", "--voices-dir", "minhas-vozes"])
+    assert cfg.voices_dir == "minhas-vozes"
+
+
+def test_main_passes_tts_cache_dir_to_config():
+    cfg = _run_main(["http://x", "--tts-cache-dir", "meu-cache"])
+    assert cfg.tts_cache_dir == "meu-cache"
+
+
+def test_main_no_tts_cache_disables_cache():
+    cfg = _run_main(["http://x", "--no-tts-cache"])
+    assert cfg.tts_cache is False
+
+
+def test_main_keeps_config_defaults_without_new_flags():
+    default = Config()
+    cfg = _run_main(["http://x"])
+    assert cfg.voices_dir == default.voices_dir
+    assert cfg.tts_cache_dir == default.tts_cache_dir
+    assert cfg.tts_cache == default.tts_cache
