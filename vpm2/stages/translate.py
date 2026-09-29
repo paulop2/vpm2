@@ -21,17 +21,43 @@ class TranslateStage(Stage):
     def is_done(self, ctx: Context) -> bool:
         return valid_translation(self.output_path(ctx))
 
+    def _http_error(self, ctx: Context, exc: requests.HTTPError) -> SystemExit:
+        resp = exc.response
+        status = resp.status_code if resp is not None else "?"
+        if status == 404:
+            return SystemExit(
+                f"[vpm2] o Ollama em {ctx.config.ollama_url} respondeu HTTP 404 "
+                f"para o modelo '{ctx.config.ollama_model}'. Baixe-o com "
+                f"'ollama pull {ctx.config.ollama_model}'."
+            )
+        body = " ".join((resp.text if resp is not None else "").split())
+        if len(body) > 200:
+            body = body[:200] + "…"
+        return SystemExit(
+            f"[vpm2] o Ollama em {ctx.config.ollama_url} falhou com HTTP {status}: "
+            f"{body}"
+        )
+
     def _translate_one(self, ctx, text, prev, nxt):
         prompt = build_translation_prompt(text, prev, nxt)
-        resp = requests.post(
-            f"{ctx.config.ollama_url}/api/generate",
-            json={"model": ctx.config.ollama_model,
-                  "prompt": prompt, "stream": False,
-                  "think": False,
-                  "options": {"temperature": 0.3}},
-            timeout=120,
-        )
-        resp.raise_for_status()
+        try:
+            resp = requests.post(
+                f"{ctx.config.ollama_url}/api/generate",
+                json={"model": ctx.config.ollama_model,
+                      "prompt": prompt, "stream": False,
+                      "think": False,
+                      "options": {"temperature": 0.3}},
+                timeout=120,
+            )
+            resp.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise SystemExit(
+                f"[vpm2] não foi possível falar com o Ollama em "
+                f"{ctx.config.ollama_url} ({exc}). Verifique se ele está no ar "
+                f"e rode 'ollama serve'."
+            ) from exc
+        except requests.HTTPError as exc:
+            raise self._http_error(ctx, exc) from exc
         text = resp.json()["response"]
         return _THINK_RE.sub("", text).strip()
 
@@ -48,13 +74,23 @@ class TranslateStage(Stage):
         # for correctness -- we slot each result back by its original index.
         texts_pt: list[str | None] = [None] * len(segs)
         workers = max(1, min(ctx.config.translate_workers, len(segs) or 1))
-        with (
-            ctx.reporter.bar("traduzindo (EN→PT-BR)", total=len(segs)) as bar,
-            ThreadPoolExecutor(max_workers=workers) as pool,
-        ):
-            futures = {pool.submit(translate_at, i): i for i in range(len(segs))}
-            for fut in as_completed(futures):
-                texts_pt[futures[fut]] = fut.result()
-                bar.advance()
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
+            with ctx.reporter.bar(
+                "traduzindo (EN→PT-BR)", total=len(segs)
+            ) as bar:
+                futures = {
+                    pool.submit(translate_at, i): i for i in range(len(segs))
+                }
+                for fut in as_completed(futures):
+                    texts_pt[futures[fut]] = fut.result()
+                    bar.advance()
+        except BaseException:
+            # A failed translation aborts the whole stage: drop the requests
+            # still queued instead of letting them fire into a dead Ollama.
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            pool.shutdown(wait=True)
         out = [{**s, "text_pt": texts_pt[i]} for i, s in enumerate(segs)]
         write_json(self.output_path(ctx), {"segments": out})

@@ -25,11 +25,16 @@ class DownloadStage(Stage):
             "quiet": True,
             "noprogress": True,
         }
-        with (
-            ctx.reporter.spinner("baixando vídeo do YouTube"),
-            yt_dlp.YoutubeDL(opts) as ydl,
-        ):
-            info = ydl.extract_info(ctx.url, download=True)
+        try:
+            with (
+                ctx.reporter.spinner("baixando vídeo do YouTube"),
+                yt_dlp.YoutubeDL(opts) as ydl,
+            ):
+                info = ydl.extract_info(ctx.url, download=True)
+        except yt_dlp.utils.DownloadError as exc:
+            raise SystemExit(
+                f"[vpm2] não foi possível baixar {ctx.url}: {exc}"
+            ) from exc
         write_json(ctx.path("01_meta.json"), {
             "id": info.get("id", ""),
             "title": info.get("title", ""),
