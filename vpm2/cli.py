@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from vpm2.config import Config
 from vpm2.context import Context
-from vpm2.pipeline import run_pipeline
+from vpm2.pipeline import STAGES, run_pipeline
 from vpm2.preflight import check_ffmpeg, check_ollama
 from vpm2.progress import RichReporter
 from vpm2.url import ensure_single_video, sanitize_url
@@ -50,17 +50,24 @@ def main(argv=None) -> int:
                     help="saved voice profile id (required when --voice-mode profile)")
     ap.add_argument("--save-profile", default=None,
                     help="persist the auto-extracted reference under this profile id")
+    ap.add_argument("--voices-dir", default=None,
+                    help="diretório dos perfis de voz (default: voices)")
     ap.add_argument("--asr-backend", choices=["parakeet", "whisper"],
                     default="parakeet")
     ap.add_argument("--preset-ref", default=None,
                     help="clean PT reference wav (required when --voice-mode preset)")
     ap.add_argument("--force", default=None,
-                    help="rerun from this stage name onward")
+                    choices=[s.name for s in STAGES],
+                    help="reexecuta a partir deste estágio")
     ap.add_argument("--ollama-model", default=None)
     ap.add_argument("--translate-workers", type=int, default=None,
                     help="concurrent translation requests to Ollama (default 8)")
     ap.add_argument("--asr-model", default=None)
     ap.add_argument("--work-root", default="work")
+    ap.add_argument("--tts-cache-dir", default=None,
+                    help="diretório do cache de TTS (default: work/_tts_cache)")
+    ap.add_argument("--no-tts-cache", action="store_true",
+                    help="desliga o cache de TTS entre vídeos")
     ap.add_argument("--keep-original-audio", action="store_true",
                     help="keep the English audio as a second track "
                          "(off by default -> output has only the PT-BR dub)")
@@ -79,6 +86,12 @@ def main(argv=None) -> int:
     config.voice_profile = args.voice_profile
     config.save_profile = args.save_profile
     config.asr_backend = args.asr_backend
+    if args.voices_dir:
+        config.voices_dir = args.voices_dir
+    if args.tts_cache_dir:
+        config.tts_cache_dir = args.tts_cache_dir
+    if args.no_tts_cache:
+        config.tts_cache = False
     if args.max_speed is not None:
         config.max_speed = args.max_speed
     if args.ollama_model:
