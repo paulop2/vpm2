@@ -13,6 +13,18 @@ from vpm2.stages.base import Stage
 from vpm2.timeline import plan_timeline
 
 
+def _tmp_sibling(dest: Path) -> Path:
+    # Sibling temp in the same directory keeps os.replace atomic; keeping the
+    # original extension lets ffmpeg/soundfile infer the container format.
+    return dest.with_name(f".{dest.stem}.tmp{dest.suffix}")
+
+
+def _write_wav_atomic(dest: Path, audio, sr: int) -> None:
+    tmp = _tmp_sibling(dest)
+    sf.write(str(tmp), audio, sr, format="WAV")
+    os.replace(tmp, dest)
+
+
 def _atempo(in_path: Path, out_path: Path, speed: float) -> None:
     # ffmpeg atempo supports 0.5..2.0 per filter; our cap is <=2.0 so one pass.
     subprocess.run(
@@ -88,24 +100,32 @@ class AssembleStage(Stage):
                 buffer[start_sample:end_sample] += audio.astype("float32")
 
         pt_wav = ctx.path("06_audio_pt.wav")
-        sf.write(str(pt_wav), buffer, sr)
+        _write_wav_atomic(pt_wav, buffer, sr)
 
         video = ctx.path("01_video.mp4")
         out = self.output_path(ctx)
+        # Mux to a hidden sibling first: an interrupted ffmpeg would otherwise
+        # leave a partial 06_final.mp4 that a later resume treats as finished.
+        tmp_out = _tmp_sibling(out)
         if ctx.config.keep_original_audio:
             cmd = [
                 "ffmpeg", "-y", "-i", str(video), "-i", str(pt_wav),
                 "-map", "0:v:0", "-map", "1:a:0", "-map", "0:a:0?",
                 "-c:v", "copy", "-c:a", "aac",
                 "-disposition:a:0", "default", "-disposition:a:1", "none",
-                "-shortest", str(out),
+                "-shortest", str(tmp_out),
             ]
         else:
             cmd = [
                 "ffmpeg", "-y", "-i", str(video), "-i", str(pt_wav),
                 "-map", "0:v:0", "-map", "1:a:0",
-                "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
+                "-c:v", "copy", "-c:a", "aac", "-shortest", str(tmp_out),
             ]
         log = ctx.log_dir() / "assemble.log"
         with ctx.reporter.spinner("muxando vídeo + áudio PT-BR"), open(log, "w") as lf:
-            subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
+            try:
+                subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
+            except BaseException:
+                tmp_out.unlink(missing_ok=True)
+                raise
+            os.replace(tmp_out, out)

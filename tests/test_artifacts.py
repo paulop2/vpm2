@@ -52,3 +52,27 @@ def test_valid_clips_checks_files_exist(tmp_path):
     write_json(p, {"sample_rate": 24000, "segments": [
         {"id": 0, "start": 0.0, "end": 1.0, "clip": "9999.wav", "duration": 0.9}]})
     assert valid_clips(p, clips) is False
+
+
+def test_valid_clips_requires_duration(tmp_path):
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    (clips / "0000.wav").write_bytes(b"RIFF")
+    p = tmp_path / "c.json"
+    # old/partial manifest without duration -> invalid (AssembleStage would KeyError)
+    write_json(p, {"sample_rate": 24000, "segments": [
+        {"id": 0, "start": 0.0, "end": 1.0, "clip": "0000.wav"}]})
+    assert valid_clips(p, clips) is False
+
+
+def test_valid_clips_rejects_non_positive_duration(tmp_path):
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    (clips / "0000.wav").write_bytes(b"RIFF")
+    p = tmp_path / "c.json"
+    write_json(p, {"sample_rate": 24000, "segments": [
+        {"id": 0, "start": 0.0, "end": 1.0, "clip": "0000.wav", "duration": 0}]})
+    assert valid_clips(p, clips) is False
+    write_json(p, {"sample_rate": 24000, "segments": [
+        {"id": 0, "start": 0.0, "end": 1.0, "clip": "0000.wav", "duration": -0.5}]})
+    assert valid_clips(p, clips) is False
