@@ -48,11 +48,13 @@ class TranslateStage(Stage):
         # for correctness -- we slot each result back by its original index.
         texts_pt: list[str | None] = [None] * len(segs)
         workers = max(1, min(ctx.config.translate_workers, len(segs) or 1))
-        with ctx.reporter.bar("traduzindo (EN→PT-BR)", total=len(segs)) as bar:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = {pool.submit(translate_at, i): i for i in range(len(segs))}
-                for fut in as_completed(futures):
-                    texts_pt[futures[fut]] = fut.result()
-                    bar.advance()
+        with (
+            ctx.reporter.bar("traduzindo (EN→PT-BR)", total=len(segs)) as bar,
+            ThreadPoolExecutor(max_workers=workers) as pool,
+        ):
+            futures = {pool.submit(translate_at, i): i for i in range(len(segs))}
+            for fut in as_completed(futures):
+                texts_pt[futures[fut]] = fut.result()
+                bar.advance()
         out = [{**s, "text_pt": texts_pt[i]} for i, s in enumerate(segs)]
         write_json(self.output_path(ctx), {"segments": out})

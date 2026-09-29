@@ -80,8 +80,13 @@ class RichReporter:
     @contextmanager
     def bar(self, label: str, total: float, show_count: bool = True):
         from rich.progress import (
-            BarColumn, MofNCompleteColumn, Progress, TaskProgressColumn,
-            TextColumn, TimeElapsedColumn, TimeRemainingColumn,
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            TaskProgressColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
         )
 
         columns = [

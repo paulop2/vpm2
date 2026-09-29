@@ -25,7 +25,7 @@ def _write_wav_atomic(dest: Path, audio, sr: int) -> None:
 
 
 def _extract_reference(ctx: Context):
-    from faster_whisper.vad import get_speech_timestamps, VadOptions
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
 
     audio_path = ctx.path("02_audio.wav")
     data, sr = sf.read(str(audio_path))

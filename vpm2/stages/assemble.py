@@ -107,6 +107,5 @@ class AssembleStage(Stage):
                 "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
             ]
         log = ctx.log_dir() / "assemble.log"
-        with ctx.reporter.spinner("muxando vídeo + áudio PT-BR"):
-            with open(log, "w") as lf:
-                subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)
+        with ctx.reporter.spinner("muxando vídeo + áudio PT-BR"), open(log, "w") as lf:
+            subprocess.run(cmd, check=True, stdout=lf, stderr=subprocess.STDOUT)

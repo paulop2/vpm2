@@ -1,9 +1,7 @@
-from pathlib import Path
-
 from vpm2.config import Config
 from vpm2.context import Context
-from vpm2.stages.base import Stage
 from vpm2.pipeline import run_pipeline
+from vpm2.stages.base import Stage
 
 
 class FakeStage(Stage):

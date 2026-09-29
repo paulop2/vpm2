@@ -3,7 +3,9 @@ import soundfile as sf
 
 from vpm2.asr.base import RawSegment
 from vpm2.asr.parakeet_backend import (
-    ParakeetBackend, offset_segments, parse_hypothesis, plan_chunks,
+    ParakeetBackend,
+    offset_segments,
+    plan_chunks,
 )
 from vpm2.config import Config
 
