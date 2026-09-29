@@ -18,13 +18,28 @@ class TranscribeStage(Stage):
         return valid_transcript(self.output_path(ctx))
 
     def run(self, ctx: Context) -> None:
-        backend = get_asr_backend(ctx.config)
-        with ctx.reporter.spinner(f"transcrevendo ({ctx.config.asr_backend})"):
-            raw = backend.transcribe(ctx.path("02_audio.wav"))
+        backend = ctx.config.asr_backend
+        try:
+            asr = get_asr_backend(ctx.config)
+            with ctx.reporter.spinner(f"transcrevendo ({backend})"):
+                raw = asr.transcribe(ctx.path("02_audio.wav"))
+        except ImportError as exc:
+            raise SystemExit(
+                f"[vpm2] dependências do backend '{backend}' não estão instaladas "
+                f"({exc}). Instale-as ou rode com --asr-backend whisper."
+            ) from exc
+        except RuntimeError as exc:
+            detail = str(exc)
+            if "cuda" in detail.lower() or "out of memory" in detail.lower():
+                raise SystemExit(
+                    f"[vpm2] o backend '{backend}' falhou com um erro de GPU/CUDA "
+                    f"({detail}). Rode com --asr-backend whisper para usar a CPU."
+                ) from exc
+            raise
         segments = normalize_segments(raw)
         write_json(self.output_path(ctx), {
             "language": ctx.config.source_lang,
             "segments": segments,
         })
-        del backend
+        del asr
         free_cuda()

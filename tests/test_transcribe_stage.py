@@ -1,3 +1,5 @@
+import pytest
+
 from vpm2.artifacts import read_json
 from vpm2.asr.base import RawSegment
 from vpm2.config import Config
@@ -12,6 +14,14 @@ class FakeASRBackend:
 
     def transcribe(self, audio_path):
         return self._segments
+
+
+class RaisingASRBackend:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def transcribe(self, audio_path):
+        raise self._exc
 
 
 def make_ctx(tmp_path):
@@ -48,3 +58,91 @@ def test_is_done_true_after_run(tmp_path, monkeypatch):
     stage = TranscribeStage()
     stage.run(ctx)
     assert stage.is_done(ctx) is True
+
+
+def test_runtime_error_cuda_out_of_memory_suggests_whisper(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+    exc = RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+    monkeypatch.setattr(
+        transcribe_mod, "get_asr_backend",
+        lambda cfg: RaisingASRBackend(exc),
+    )
+
+    with pytest.raises(SystemExit) as ei:
+        TranscribeStage().run(ctx)
+
+    message = str(ei.value)
+    assert message.startswith("[vpm2]")
+    assert "whisper" in message
+    assert ctx.config.asr_backend in message
+
+
+def test_runtime_error_cuda_uppercase_is_matched(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+    exc = RuntimeError("CUDA error: no kernel image is available")
+    monkeypatch.setattr(
+        transcribe_mod, "get_asr_backend",
+        lambda cfg: RaisingASRBackend(exc),
+    )
+
+    with pytest.raises(SystemExit) as ei:
+        TranscribeStage().run(ctx)
+
+    message = str(ei.value)
+    assert message.startswith("[vpm2]")
+    assert "whisper" in message
+    assert ctx.config.asr_backend in message
+
+
+def test_import_error_from_factory_suggests_whisper(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+
+    def raising_factory(cfg):
+        raise ImportError("No module named 'nemo'")
+
+    monkeypatch.setattr(transcribe_mod, "get_asr_backend", raising_factory)
+
+    with pytest.raises(SystemExit) as ei:
+        TranscribeStage().run(ctx)
+
+    message = str(ei.value)
+    assert message.startswith("[vpm2]")
+    assert "whisper" in message
+    assert ctx.config.asr_backend in message
+
+
+def test_import_error_from_backend_use_suggests_whisper(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+    monkeypatch.setattr(
+        transcribe_mod, "get_asr_backend",
+        lambda cfg: RaisingASRBackend(ImportError("No module named 'nemo'")),
+    )
+
+    with pytest.raises(SystemExit) as ei:
+        TranscribeStage().run(ctx)
+
+    message = str(ei.value)
+    assert message.startswith("[vpm2]")
+    assert "whisper" in message
+
+
+def test_other_value_error_propagates(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+    monkeypatch.setattr(
+        transcribe_mod, "get_asr_backend",
+        lambda cfg: RaisingASRBackend(ValueError("boom")),
+    )
+
+    with pytest.raises(ValueError):
+        TranscribeStage().run(ctx)
+
+
+def test_non_cuda_runtime_error_propagates(tmp_path, monkeypatch):
+    ctx = make_ctx(tmp_path)
+    monkeypatch.setattr(
+        transcribe_mod, "get_asr_backend",
+        lambda cfg: RaisingASRBackend(RuntimeError("model file is corrupt")),
+    )
+
+    with pytest.raises(RuntimeError):
+        TranscribeStage().run(ctx)
